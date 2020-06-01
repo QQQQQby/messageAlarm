@@ -1,9 +1,7 @@
 package com.message.alarm;
 
-import androidx.appcompat.app.AlertDialog;
 import androidx.appcompat.app.AppCompatActivity;
 
-import android.content.DialogInterface;
 import android.content.Intent;
 import android.database.Cursor;
 import android.net.Uri;
@@ -26,6 +24,7 @@ import java.text.SimpleDateFormat;
 import java.util.ArrayList;
 import java.util.Date;
 import java.util.List;
+import java.util.Locale;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
@@ -38,7 +37,7 @@ public class MainActivity extends AppCompatActivity {
     private String reg;
     private ImageView ivMsg;
     private ImageView ivNotice;
-    SimpleDateFormat simpleDateFormat = new SimpleDateFormat("yyyy-MM-dd hh:mm");
+    SimpleDateFormat simpleDateFormat = new SimpleDateFormat("yyyy-MM-dd hh:mm", Locale.CHINESE);
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -98,63 +97,47 @@ public class MainActivity extends AppCompatActivity {
         });
         //正则匹配yyyy-mm-dd hh:mm时间的字符  2019-03-06 15:27
         reg = "[1-2][0-9][0-9][0-9]-([1][0-2]|0?[1-9])-([12][0-9]|3[01]|0?[1-9]) ([01][0-9]|[2][0-3]):[0-5][0-9]";
+
+        //读取短信数据
+        readSmsToList();
+
         //初始化数据
         initData();
 
     }
 
     private void initData() {
-        //读取数据
-        getSmsfromPhone();
-
         //查询数据库
         List<Message> messages = DaoManager.getInstance().mDaoSession.getMessageDao().queryBuilder().list();
 
         //存储进数据库
-        if (this.list != null && this.list.size() > 0) {
-            for (int i = 0; i < this.list.size(); i++) {
-                boolean contains = false;
-                for (int j = 0; j < messages.size(); j++) {
-                    if (list.get(i).getMessageId() == messages.get(j).getMessageId()) {
-                        //判断数据库中是否已经有存储,有存储则不进行添加存储
-                        contains = true;
-                        break;
-                    }
+        if (this.list == null || this.list.size() == 0)
+            return;
+        for (int i = 0; i < this.list.size(); i++) {
+            boolean contains = false;
+            for (int j = 0; j < messages.size(); j++) {
+                if (list.get(i).getMessageId() == messages.get(j).getMessageId()) {
+                    //判断数据库中是否已经有存储,有存储则不进行添加存储
+                    contains = true;
+                    break;
                 }
-                //属于新短信时,添加进数据库,同时主页面弹窗提示用户是否添加进提醒
-                if (!contains) {
+            }
+            //属于新短信时,添加进数据库,同时主页面弹窗提示用户是否添加进提醒
+            if (!contains) {
 
-                    //不属于提醒的内容 直接存进数据库
-                    if (TextUtils.isEmpty(list.get(i).getNoticeTime())) {
-                        DaoManager.getInstance().mDaoSession.insert(list.get(i));
-                    } else {
-                        final int finalI = i;
-                        new AlertDialog
-                                .Builder(MainActivity.this).setTitle("提醒")
-                                .setMessage("是否将此条信息内容添加到提醒," + list.get(i).getNoticeContent())
-                                .setPositiveButton("是", new DialogInterface.OnClickListener() {
-                                    @Override
-                                    public void onClick(DialogInterface dialog, int which) {
-                                        list.get(finalI).setNeedNotice(true);
-                                        try {
-                                            Date date = simpleDateFormat.parse(list.get(finalI).getNoticeTime());
-                                            AlarmManagerUtil.setAlarmOnce(MainActivity.this, date.getTime(), (int) list.get(finalI).getMessageId(), list.get(finalI).getNoticeContent());
-                                            DaoManager.getInstance().mDaoSession.insert(list.get(finalI));
-                                        } catch (ParseException e) {
-                                            e.printStackTrace();
-                                        }
-
-                                    }
-                                })
-                                .setNegativeButton("否", new DialogInterface.OnClickListener() {
-                            @Override
-                            public void onClick(DialogInterface dialog, int which) {
-                                dialog.dismiss();
-                                DaoManager.getInstance().mDaoSession.insert(list.get(finalI));
-                            }
-                        }).create().show();
+                //不属于提醒的内容 直接存进数据库
+                if (TextUtils.isEmpty(list.get(i).getNoticeTime())) {
+                    DaoManager.getInstance().mDaoSession.insert(list.get(i));
+                } else {
+                    list.get(i).setNeedNotice(true);
+                    try {
+                        Date date = simpleDateFormat.parse(list.get(i).getNoticeTime());
+                        if (date != null)
+                            AlarmManagerUtil.setAlarmOnce(MainActivity.this, date.getTime(), (int) list.get(i).getMessageId(), list.get(i).getNoticeContent());
+                    } catch (ParseException e) {
+                        e.printStackTrace();
                     }
-
+                    DaoManager.getInstance().mDaoSession.insert(list.get(i));
                 }
             }
         }
@@ -162,13 +145,15 @@ public class MainActivity extends AppCompatActivity {
 
 
     //读取所有短信信息
-    private List<Message> getSmsfromPhone() {
+    private void readSmsToList() {
         list.clear();
         Uri uri = Uri.parse(SMS_URI_ALL);
         //所要查询的列
         String[] projection = new String[]{"_id", "address", "person", "body", "date", "type"};
         //查询
         Cursor cur = getContentResolver().query(uri, projection, null, null, "date desc");//获取手机内部信息
+        if (cur == null)
+            return;
         //将查询结果保存到列表中
         while (cur.moveToNext()) {
             Message message = new Message();
@@ -194,7 +179,7 @@ public class MainActivity extends AppCompatActivity {
             //取得信息类型，1为已接收，2为已发送
             int type = cur.getInt(index_Type);
             //格式化日期
-            SimpleDateFormat dateFormat = new SimpleDateFormat("yyyy-MM-dd hh:mm:ss");
+            SimpleDateFormat dateFormat = new SimpleDateFormat("yyyy-MM-dd hh:mm:ss", Locale.CHINESE);
             String strDate = dateFormat.format(d);
             //将数据存储到,message中
             message.setMessageId(messageId);
@@ -233,10 +218,8 @@ public class MainActivity extends AppCompatActivity {
         }
         if (!cur.isClosed()) {
             cur.close();
-            cur = null;
         }
 
-        return list;
     }
 
 }
